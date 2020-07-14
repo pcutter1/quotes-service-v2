@@ -1,11 +1,7 @@
 package edu.cnm.deepdive.quotes.controller;
 
-import edu.cnm.deepdive.quotes.model.entity.Quote;
 import edu.cnm.deepdive.quotes.model.entity.Source;
-import edu.cnm.deepdive.quotes.service.QuoteRepository;
-import edu.cnm.deepdive.quotes.service.SourceRepository;
-import java.util.List;
-import java.util.NoSuchElementException;
+import edu.cnm.deepdive.quotes.service.SourceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.hateoas.server.ExposesResourceFor;
 import org.springframework.http.HttpStatus;
@@ -18,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,65 +23,58 @@ import org.springframework.web.bind.annotation.RestController;
 @ExposesResourceFor(Source.class)
 public class SourceController {
 
-  private final SourceRepository sourceRepository;
-  private final QuoteRepository quoteRepository;
+  private final SourceService sourceService;
 
   @Autowired
-  public SourceController(SourceRepository sourceRepository,
-      QuoteRepository quoteRepository) {
-    this.sourceRepository = sourceRepository;
-    this.quoteRepository = quoteRepository;
+  public SourceController(SourceService sourceService) {
+    this.sourceService = sourceService;
   }
 
-  @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-  public Iterable<Source> get() {
-    return sourceRepository.getAllByOrderByNameAsc();
-  }
-
-  @PostMapping(
-      consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<Source> post(@RequestBody Source source) {
-    sourceRepository.save(source);
+    source = sourceService.create(source);
     return ResponseEntity.created(source.getHref()).body(source);
   }
 
-  @GetMapping(value = "/{id:\\d+}", produces = MediaType.APPLICATION_JSON_VALUE)
-  public Source get(@PathVariable long id) {
-    return sourceRepository.findById(id).orElseThrow(NoSuchElementException::new);
+  @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+  public Iterable<Source> get(
+      @RequestParam(required = false, defaultValue = "false") boolean includeNull,
+      @RequestParam(required = false, defaultValue = "true") boolean includeEmpty) {
+    return sourceService.get(includeNull, includeEmpty);
   }
 
-  @GetMapping(value = "/{id:\\d+}/quotes", produces = MediaType.APPLICATION_JSON_VALUE)
-  public Iterable<Quote> getQuotes(@PathVariable long id) {
-    return sourceRepository.findById(id)
-        .map(quoteRepository::getAllBySourceOrderByTextAsc)
-        .orElseThrow(NoSuchElementException::new);
+  @GetMapping(value = "/search", produces = MediaType.APPLICATION_JSON_VALUE)
+  public Iterable<Source> search(@RequestParam String q) {
+    return sourceService.get(q);
+  }
+
+  @GetMapping(value = "/{id:\\d+}", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<Source> get(@PathVariable long id) {
+    return ResponseEntity.of(sourceService.get(id));
   }
 
   @PutMapping(value = "/{id:\\d+}",
       consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-  public Source put(@PathVariable long id, @RequestBody Source source) {
-    Source existingSource = get(id);
-    if (source.getName() != null) {
-      existingSource.setName(source.getName());
-    }
-    return sourceRepository.save(existingSource);
+  public ResponseEntity<Source> put(@PathVariable long id, @RequestBody Source source) {
+    return ResponseEntity.of(sourceService.update(id, source));
+  }
+
+  @GetMapping(value = "/{id:\\d+}/name", produces = MediaType.TEXT_PLAIN_VALUE)
+  public ResponseEntity<String> getName(@PathVariable long id) {
+    return ResponseEntity.of(sourceService.get(id).map(Source::getName));
+  }
+
+  @PutMapping(value = "/{id:\\d+}/name",
+      consumes = MediaType.TEXT_PLAIN_VALUE, produces = MediaType.TEXT_PLAIN_VALUE)
+  public ResponseEntity<String> putName(@PathVariable long id, @RequestBody String updatedName) {
+    return ResponseEntity.of(sourceService.update(id, updatedName));
   }
 
   @DeleteMapping(value = "/{id:\\d+}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void delete(@PathVariable long id) {
-    sourceRepository.findById(id)
-        .map((source) -> {
-          List<Quote> quotes = source.getQuotes();
-          quotes.forEach((quote) -> quote.setSource(null));
-          quoteRepository.saveAll(quotes);
-          return source;
-        })
-        .map((source) -> {
-          sourceRepository.delete(source);
-          return source;
-        })
-        .orElseThrow(NoSuchElementException::new);
+    sourceService.delete(id);
   }
 
 }
